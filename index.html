@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width">
+
+    <title>AudioBuffer example</title>
+
+    <link rel="stylesheet" href="">
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+
+  <body>
+    <button>Start listening</button>
+  </body>
+  <script>
+  document.querySelector('button').onclick = function() {
+      async function* loadAudioData() {
+	 let response = await fetch('http://localhost:9099/audio.raw');
+	 let reader = response.body.getReader();
+	 for (;;) {
+             console.log('Reading a chunk from the audio server');
+	     let {value: chunk, done: readerDone} = await reader.read();
+             console.log('Read ', chunk.length, 'bytes.');
+	     yield chunk;
+	     if (readerDone) {
+		 console.log('Reader hit EOF');
+		 break;
+	     }
+	 }
+      }
+
+
+      async function playAudio() {
+	  var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+	  var channels = 1;
+	  var sr = 44100;
+	  audioCtx.sampleRate = sr;
+	  var framecount = 1 * sr;
+	  var myArrayBuffer = audioCtx.createBuffer(channels, audioCtx.sampleRate, audioCtx.sampleRate);
+	  var nowBuffering = myArrayBuffer.getChannelData(0);
+	  var source = audioCtx.createBufferSource();
+	  var idx = 0;
+	  var startedPlaying = Date.now();
+	  var newStartedPlaying = 0;
+	  var delay = 0;
+	  var gen = loadAudioData()
+	  source.buffer = myArrayBuffer;
+	  source.connect(audioCtx.destination);
+	  for (;;) {
+	      let {value: chunk, done: itsdone} = await gen.next();
+	      for (var i = 0; i < chunk.length; i++) {
+		  nowBuffering[idx] = (chunk[i] - 128)/256;
+		  idx++;
+		  if (idx >= framecount) {
+		      source.start();
+		      idx = 0;
+		      myArrayBuffer = audioCtx.createBuffer(channels, audioCtx.sampleRate, audioCtx.sampleRate);
+		      nowBuffering = myArrayBuffer.getChannelData(0);
+		      nowBuffering.fill(0);
+		      source = audioCtx.createBufferSource();
+		      source.buffer = myArrayBuffer;
+		      source.connect(audioCtx.destination);
+		  }
+	      }	  
+	      if (itsdone) {
+		  break;
+	      }
+	  }
+      }
+      playAudio()
+  }
+  </script>
+</html>
